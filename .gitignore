@@ -40,11 +40,13 @@ env/
 # Data directories (keep code only)
 Lettuce_disease_datasets/
 Lettuce_disease_datasets_split/
+drsa_net_output/
 feature_extraction_output/
 feature_extraction_output_*/
 felzenszwalb_masks_output/
 felzenszwalb_hyperparameter_tuning/
 felzenszwalb_batch_results/
+mlruns/
 run_logs/
 
 # Temporary files

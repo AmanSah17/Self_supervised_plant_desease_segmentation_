@@ -8,7 +8,7 @@ import json
 import os
 import random
 import time
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -40,7 +40,7 @@ def run_phase_1_tuning() -> Dict:
     
     # Configure tuning - test smaller range for speed or use default
     config = HyperparameterConfig(
-        samples_per_class=12,  # Keep it small for quick tuning
+        samples_per_class=2,  # Keep it small for quick tuning
         use_gpu=True
     )
     
@@ -58,7 +58,7 @@ def run_phase_1_tuning() -> Dict:
     # Save the full analysis just in case
     output_dir = Path(config.output_base)
     output_dir.mkdir(parents=True, exist_ok=True)
-    with open(output_dir / "pipeline_recommendations.json", 'w') as f:
+    with open(output_dir / "pipeline_recommendations_1.json", 'w') as f:
         json.dump(analysis, f, indent=2)
         
     return best_params
@@ -164,56 +164,85 @@ def run_phase_2_segmentation(optimal_params: Dict) -> List[dict]:
             print(f"Split dir not found: {split_dir}")
             continue
             
-        items = collect_image_paths(split_dir, config.samples_per_class)
+        class_dirs = sorted(d for d in split_dir.iterdir() if d.is_dir())
         
-        # Filter out already processed items
-        pending_items = []
-        for class_name, img_path in items:
-            if str(img_path) not in processed_images or processed_images[str(img_path)]['status'] != 'success':
-                pending_items.append((class_name, img_path))
-                
-        if not pending_items:
-            print("All images in this split are already processed.")
-            continue
+        for class_dir in class_dirs:
+            class_name = class_dir.name
             
-        print(f"Processing {len(pending_items)} remaining images from {split} split...")
-        
-        # Use multiprocessing pool
-        max_workers = min(os.cpu_count() or 4, 8) # Max 8 workers to not overload RAM/GPU
-        print(f"Using ProcessPoolExecutor with {max_workers} workers...")
-        
-        with ProcessPoolExecutor(max_workers=max_workers) as executor:
-            futures = {
-                executor.submit(process_image_worker, path, cls_name, split, config): path
-                for cls_name, path in pending_items
-            }
+            # Collect images for this class only
+            image_paths = []
+            for pattern in ("*.jpg", "*.jpeg", "*.png", "*.JPG", "*.JPEG", "*.PNG"):
+                image_paths.extend(class_dir.glob(pattern))
             
-            progress = tqdm(total=len(pending_items), desc="Processing", unit="image", ncols=100)
+            # Sort to ensure consistent order
+            image_paths = sorted(list(set(image_paths)))
             
-            for future in as_completed(futures):
-                result = future.result()
-                img_path_str = result['image_path']
-                
-                # Update tracking
-                processed_images[img_path_str] = result
-                all_results.append(result)
-                
-                # Update checkpoint
-                with open(checkpoint_file, 'w') as f:
-                    json.dump(processed_images, f, indent=2)
+            # Filter pending items
+            pending_items = []
+            for img_path in image_paths:
+                if str(img_path) not in processed_images or processed_images[str(img_path)]['status'] != 'success':
+                    pending_items.append((class_name, img_path))
                     
-                if result['status'] == 'success':
-                    progress.set_postfix({'status': 'ok', 'segments': result['num_segments']})
-                else:
-                    progress.set_postfix({'status': 'failed'})
+            if not pending_items:
+                print(f"[{split}/{class_name}] All images already processed.")
+                continue
                 
-                progress.update(1)
+            print(f"\nProcessing {len(pending_items)} remaining images from {split}/{class_name} split...")
             
-            progress.close()
+            # Use multithreading pool
+            max_workers = min(os.cpu_count() or 4, 8) # Max 8 workers to not overload RAM/GPU
+            
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {
+                    executor.submit(process_image_worker, path, cls_name, split, config): path
+                    for cls_name, path in pending_items
+                }
+                
+                progress = tqdm(total=len(pending_items), desc=f"{class_name}", unit="img", ncols=100)
+                
+                for future in as_completed(futures):
+                    result = future.result()
+                    img_path_str = result['image_path']
+                    
+                    # Update tracking
+                    processed_images[img_path_str] = result
+                    all_results.append(result)
+                    
+                    # Update checkpoint
+                    with open(checkpoint_file, 'w') as f:
+                        json.dump(processed_images, f, indent=2)
+                        
+                    if result['status'] == 'success':
+                        progress.set_postfix({'status': 'ok', 'segments': result['num_segments']})
+                    else:
+                        progress.set_postfix({'status': 'failed'})
+                    
+                    progress.update(1)
+                
+                progress.close()
             
     # Save final summary
     summary_df = pd.DataFrame(all_results)
     summary_df.to_csv(output_base / "pipeline_summary.csv", index=False)
+    
+    # Generate and log class-wise analytics
+    if not summary_df.empty and 'status' in summary_df.columns:
+        success_df = summary_df[summary_df['status'] == 'success']
+        if not success_df.empty:
+            analytics_df = success_df.groupby('class_name').agg(
+                mean_segments=('num_segments', 'mean'),
+                min_segments=('num_segments', 'min'),
+                max_segments=('num_segments', 'max'),
+                mean_time_sec=('elapsed_seconds', 'mean')
+            ).reset_index()
+            analytics_path = output_base / "class_wise_analytics.csv"
+            analytics_df.to_csv(analytics_path, index=False)
+            print("\n" + "-"*50)
+            print("Class-wise Segmentation Analytics:")
+            print("-"*50)
+            print(analytics_df.to_string(index=False))
+            print("-"*50 + "\n")
+            
     print(f"\nPhase 2 Complete. Processed {len(all_results)} images total.")
     return all_results
 

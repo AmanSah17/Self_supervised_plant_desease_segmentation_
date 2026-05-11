@@ -21,6 +21,7 @@ from scipy import ndimage as ndi
 from skimage.filters import sobel
 from skimage.segmentation import felzenszwalb, find_boundaries
 from tqdm import tqdm
+import numba
 
 
 @dataclass
@@ -57,7 +58,14 @@ class EdgeEnhancer:
     """GPU-accelerated edge enhancement for better Felzenszwalb results"""
     
     def __init__(self, device: str = "cpu"):
-        self.device = device
+        self.device = torch.device(device)
+        
+        if self.device.type == 'cuda':
+            # Setup CUDA Sobel kernels
+            sobel_x = torch.tensor([[-1., 0., 1.], [-2., 0., 2.], [-1., 0., 1.]], dtype=torch.float32, device=self.device).view(1, 1, 3, 3)
+            sobel_y = torch.tensor([[-1., -2., -1.], [0., 0., 0.], [1., 2., 1.]], dtype=torch.float32, device=self.device).view(1, 1, 3, 3)
+            self.sobel_x = sobel_x
+            self.sobel_y = sobel_y
     
     def compute_edge_map(self, img_rgb: np.ndarray) -> np.ndarray:
         """Compute edge map using LAB color space gradients"""
@@ -66,7 +74,23 @@ class EdgeEnhancer:
         a_channel = (img_lab[..., 1] - 128.0) / 127.0
         b_channel = (img_lab[..., 2] - 128.0) / 127.0
         
-        edge_map = 0.6 * sobel(l_channel) + 0.2 * sobel(a_channel) + 0.2 * sobel(b_channel)
+        if self.device.type == 'cuda':
+            import torch.nn.functional as F
+            t_l = torch.from_numpy(l_channel).unsqueeze(0).unsqueeze(0).to(self.device)
+            t_a = torch.from_numpy(a_channel).unsqueeze(0).unsqueeze(0).to(self.device)
+            t_b = torch.from_numpy(b_channel).unsqueeze(0).unsqueeze(0).to(self.device)
+            
+            def sobel_torch(t):
+                pad_t = F.pad(t, (1, 1, 1, 1), mode='reflect')
+                gx = F.conv2d(pad_t, self.sobel_x)
+                gy = F.conv2d(pad_t, self.sobel_y)
+                return torch.sqrt(gx**2 + gy**2 + 1e-6)
+                
+            edge_map_t = 0.6 * sobel_torch(t_l) + 0.2 * sobel_torch(t_a) + 0.2 * sobel_torch(t_b)
+            edge_map = edge_map_t.squeeze().cpu().numpy()
+        else:
+            edge_map = 0.6 * sobel(l_channel) + 0.2 * sobel(a_channel) + 0.2 * sobel(b_channel)
+            
         edge_map = edge_map.astype(np.float32)
         return (edge_map - edge_map.min()) / (np.ptp(edge_map) + 1e-6)
     
@@ -152,85 +176,114 @@ class FelzenszwalbSegmenter:
         """Merge very small segments with neighbors"""
         if min_size <= 1:
             return segments
-        
-        segments = segments.copy()
+            
         img_lab = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2LAB).astype(np.float32)
-        
-        changed = True
-        iterations = 0
-        max_iterations = 5
-        
-        while changed and iterations < max_iterations:
-            changed = False
-            iterations += 1
-            ids, counts = np.unique(segments, return_counts=True)
-            small_ids = ids[counts < min_size]
-            
-            if len(small_ids) == 0:
-                break
-            
-            for seg_id in small_ids:
-                mask = segments == seg_id
-                if not np.any(mask):
-                    continue
-                
-                # Find neighboring segments
-                neighbors = self._get_neighbors(segments, seg_id)
-                if not neighbors:
-                    continue
-                
-                # Merge with most similar neighbor
-                best_neighbor = self._find_best_merge_neighbor(
-                    segments, img_lab, mask, neighbors
-                )
-                segments[mask] = best_neighbor
-                changed = True
-            
-            if changed:
-                segments = self._relabel_segments(segments)
-        
-        return segments
+        return fast_merge_tiny_segments(segments.astype(np.int32), img_lab, min_size)
+
+@numba.njit
+def fast_merge_tiny_segments(segments, img_lab, min_size):
+    height, width = segments.shape
+    num_segments = segments.max() + 1
     
-    @staticmethod
-    def _get_neighbors(segments: np.ndarray, seg_id: int) -> set:
-        """Get neighboring segment IDs"""
-        mask = segments == seg_id
-        dilated = ndi.binary_dilation(mask, iterations=1)
-        neighbors = set(segments[dilated].ravel()) - {seg_id}
-        return neighbors
+    sizes = np.zeros(num_segments, dtype=np.int32)
+    color_sum = np.zeros((num_segments, 3), dtype=np.float32)
+    adj = np.zeros((num_segments, num_segments), dtype=numba.boolean)
     
-    @staticmethod
-    def _find_best_merge_neighbor(
-        segments: np.ndarray,
-        img_lab: np.ndarray,
-        mask: np.ndarray,
-        neighbors: set,
-    ) -> int:
-        """Find best neighbor to merge with based on color similarity"""
-        if not neighbors:
-            return int(segments[mask][0]) if np.any(mask) else 0
+    for y in range(height):
+        for x in range(width):
+            s = segments[y, x]
+            sizes[s] += 1
+            color_sum[s, 0] += img_lab[y, x, 0]
+            color_sum[s, 1] += img_lab[y, x, 1]
+            color_sum[s, 2] += img_lab[y, x, 2]
+            
+            if x < width - 1:
+                s_r = segments[y, x + 1]
+                if s != s_r:
+                    adj[s, s_r] = True
+                    adj[s_r, s] = True
+            if y < height - 1:
+                s_d = segments[y + 1, x]
+                if s != s_d:
+                    adj[s, s_d] = True
+                    adj[s_d, s] = True
+                    
+    mean_colors = np.zeros((num_segments, 3), dtype=np.float32)
+    for i in range(num_segments):
+        if sizes[i] > 0:
+            mean_colors[i] = color_sum[i] / np.float32(sizes[i])
+            
+    parent = np.arange(num_segments, dtype=np.int32)
+    
+    changed = True
+    iterations = 0
+    while changed and iterations < 5:
+        changed = False
+        iterations += 1
         
-        seg_color = img_lab[mask].mean(axis=0)
-        best_neighbor = list(neighbors)[0]
-        best_distance = float('inf')
-        
-        for neighbor_id in neighbors:
-            neighbor_mask = segments == neighbor_id
-            if not np.any(neighbor_mask):
+        for i in range(num_segments):
+            root_i = i
+            while root_i != parent[root_i]:
+                root_i = parent[root_i]
+            
+            if sizes[root_i] == 0 or sizes[root_i] >= min_size:
                 continue
-            neighbor_color = img_lab[neighbor_mask].mean(axis=0)
-            distance = np.linalg.norm(seg_color - neighbor_color)
-            if distance < best_distance:
-                best_distance = distance
-                best_neighbor = neighbor_id
-        
-        return best_neighbor
-    
-    @staticmethod
-    def _relabel_segments(segments: np.ndarray) -> np.ndarray:
-        """Relabel segments to have consecutive IDs"""
-        labels, relabeled = np.unique(segments, return_inverse=True)
-        return relabeled.reshape(segments.shape).astype(np.int32)
+                
+            best_neighbor = -1
+            best_dist = 1e9
+            
+            for j in range(num_segments):
+                if i == j:
+                    continue
+                if adj[i, j]:
+                    root_j = j
+                    while root_j != parent[root_j]:
+                        root_j = parent[root_j]
+                        
+                    if root_i == root_j:
+                        continue
+                        
+                    dist = 0.0
+                    for c in range(3):
+                        d = mean_colors[root_i, c] - mean_colors[root_j, c]
+                        dist += d * d
+                        
+                    if dist < best_dist:
+                        best_dist = dist
+                        best_neighbor = root_j
+                        
+            if best_neighbor != -1:
+                parent[root_i] = best_neighbor
+                new_size = sizes[best_neighbor] + sizes[root_i]
+                w1 = np.float32(sizes[best_neighbor])
+                w2 = np.float32(sizes[root_i])
+                
+                for c in range(3):
+                    mean_colors[best_neighbor, c] = (mean_colors[best_neighbor, c] * w1 + mean_colors[root_i, c] * w2) / np.float32(new_size)
+                    
+                sizes[best_neighbor] = new_size
+                sizes[root_i] = 0
+                changed = True
+                
+    new_labels = np.zeros(num_segments, dtype=np.int32)
+    current_label = 0
+    for i in range(num_segments):
+        root = i
+        while root != parent[root]:
+            root = parent[root]
+        if sizes[i] > 0 and root == i:
+            new_labels[i] = current_label
+            current_label += 1
+            
+    out_segments = np.zeros_like(segments)
+    for y in range(height):
+        for x in range(width):
+            root = segments[y, x]
+            while root != parent[root]:
+                root = parent[root]
+            out_segments[y, x] = new_labels[root]
+            
+    return out_segments
 
 
 class MaskProcessor:
