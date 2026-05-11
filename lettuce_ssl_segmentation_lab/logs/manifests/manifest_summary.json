@@ -1,0 +1,23 @@
+{
+  "total_samples": 16403,
+  "healthy_samples": 1123,
+  "diseased_samples": 15280,
+  "samples_with_felz_raw": 13114,
+  "samples_with_felz_boundary": 13114,
+  "samples_with_felz_colored": 13114,
+  "classes_seen": [
+    "BACT",
+    "DML",
+    "HLTY",
+    "PML",
+    "SBL",
+    "SPW",
+    "VIRL",
+    "WLBL"
+  ],
+  "splits_seen": [
+    "test",
+    "train",
+    "validation"
+  ]
+}

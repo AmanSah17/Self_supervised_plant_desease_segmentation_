@@ -48,6 +48,8 @@ felzenszwalb_hyperparameter_tuning/
 felzenszwalb_batch_results/
 mlruns/
 run_logs/
+lettuce_ssl_segmentation_lab/stage*/
+lettuce_ssl_segmentation_lab/manifest.pkl
 
 # Temporary files
 *.tmp

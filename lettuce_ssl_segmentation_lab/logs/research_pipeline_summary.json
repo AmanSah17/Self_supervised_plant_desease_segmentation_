@@ -1,0 +1,137 @@
+{
+  "recommendation": "Start with DINOv2 features plus PaDiM for healthy-only anomaly localization, then add CAM fusion and SegFormer for pseudo-mask supervised segmentation.",
+  "manifest_summary": {
+    "total_samples": 16403,
+    "healthy_samples": 1123,
+    "diseased_samples": 15280,
+    "samples_with_felz_raw": 13114,
+    "samples_with_felz_boundary": 13114,
+    "samples_with_felz_colored": 13114,
+    "classes_seen": [
+      "BACT",
+      "DML",
+      "HLTY",
+      "PML",
+      "SBL",
+      "SPW",
+      "VIRL",
+      "WLBL"
+    ],
+    "splits_seen": [
+      "test",
+      "train",
+      "validation"
+    ]
+  },
+  "stage_plan": [
+    {
+      "stage_name": "Stage 1: Multi-representation indexing",
+      "goal": "Align every source image with all classical transform layers.",
+      "recommended_method": "Use a manifest-driven dataset so every image can expose RGB, CLAHE, Felzenszwalb raw/boundary/colored, Watershed, and edge channels.",
+      "outputs": [
+        "CSV manifest",
+        "coverage summary",
+        "missing-channel report"
+      ],
+      "implementation_notes": [
+        "Keep all channels parallel, not sequentially merged later.",
+        "Choose one preferred Felzenszwalb signature now and keep all alternates in metadata."
+      ]
+    },
+    {
+      "stage_name": "Stage 2: Healthy-only representation learning",
+      "goal": "Learn the healthy leaf texture and structure distribution before disease localization.",
+      "recommended_method": "Start with frozen DINOv2 features. Keep MAE as phase-2 domain adaptation if healthy-vs-disease separation is weak.",
+      "outputs": [
+        "healthy feature embeddings",
+        "healthy centroid/statistics bank"
+      ],
+      "implementation_notes": [
+        "Use only HLTY images for healthy distribution fitting.",
+        "Avoid aggressive augmentations that destroy subtle lesion or vein structure."
+      ]
+    },
+    {
+      "stage_name": "Stage 3: Anomaly localization",
+      "goal": "Convert diseased samples into heatmaps relative to healthy structure.",
+      "recommended_method": "PaDiM first, then PatchCore.",
+      "outputs": [
+        "per-image anomaly score",
+        "pixel heatmap",
+        "per-class anomaly summaries"
+      ],
+      "implementation_notes": [
+        "PaDiM is simpler and statistically grounded for a healthy-only baseline.",
+        "PatchCore is strong once feature quality is stable and memory-bank management is ready."
+      ]
+    },
+    {
+      "stage_name": "Stage 4: CAM fusion and pseudo masks",
+      "goal": "Fuse anomaly evidence with class-aware activations and classical priors.",
+      "recommended_method": "Combine anomaly heatmaps, transformer CAMs, Felzenszwalb boundaries, Watershed regions, and edge maps.",
+      "outputs": [
+        "raw heatmap",
+        "fused CAM",
+        "pseudo mask"
+      ],
+      "implementation_notes": [
+        "Use healthy-vs-disease classification heads to produce CAM evidence.",
+        "Use superpixel and watershed regions to expand lesion evidence beyond only the most discriminative pixels."
+      ]
+    },
+    {
+      "stage_name": "Stage 5: Refinement",
+      "goal": "Sharpen pseudo masks into segmentation-quality supervision.",
+      "recommended_method": "DenseCRF plus morphological cleanup.",
+      "outputs": [
+        "refined pseudo masks",
+        "mask confidence score"
+      ],
+      "implementation_notes": [
+        "Keep connected lesion regions while removing isolated noise.",
+        "Log confidence and discard weak pseudo labels from early training rounds."
+      ]
+    },
+    {
+      "stage_name": "Stage 6: Transformer segmentation training",
+      "goal": "Train a final multi-class lettuce disease segmentation model.",
+      "recommended_method": "SegFormer first, Mask2Former second.",
+      "outputs": [
+        "segmentation checkpoints",
+        "per-class masks",
+        "evaluation metrics"
+      ],
+      "implementation_notes": [
+        "SegFormer is the faster, lighter first baseline for your GPU.",
+        "Move to Mask2Former after pseudo-mask quality improves and compute budget allows."
+      ]
+    }
+  ],
+  "backbones": [
+    {
+      "name": "DINOv2::dinov2_vitb14",
+      "objective": "Self-distilled visual foundation features for patch- and pixel-level transfer.",
+      "strengths": [
+        "Strong off-the-shelf dense visual features.",
+        "Good first choice for healthy-feature modeling before segmentation fine-tuning.",
+        "Official repo already includes semantic segmentation examples."
+      ],
+      "caveats": [
+        "Heavy models can exceed GTX 1650 memory if fine-tuned end-to-end.",
+        "Prefer frozen feature extraction first, then lightweight heads."
+      ]
+    },
+    {
+      "name": "MAE",
+      "objective": "Masked image reconstruction for domain-adapted self-supervised pretraining.",
+      "strengths": [
+        "Good option when you want domain-specific pretraining on your lettuce images.",
+        "Can learn strong local texture structure when augmentation is tuned well."
+      ],
+      "caveats": [
+        "Requires a dedicated pretraining run and checkpoint management.",
+        "More engineering overhead than starting from frozen DINOv2 features."
+      ]
+    }
+  ]
+}
