@@ -1,0 +1,73 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Data directories (keep code only)
+Lettuce_disease_datasets/
+Lettuce_disease_datasets_split/
+feature_extraction_output/
+feature_extraction_output_*/
+felzenszwalb_masks_output/
+felzenszwalb_hyperparameter_tuning/
+felzenszwalb_batch_results/
+run_logs/
+
+# Temporary files
+*.tmp
+*.log
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Large model files
+*.pth
+*.pt
+*.pkl
+*.onnx
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Large data notebooks (exceeding GitHub limits)
+00_data_load.ipynb
+01_data_transforms.ipynb
+
+# OS
+Thumbs.db
+.DS_Store
