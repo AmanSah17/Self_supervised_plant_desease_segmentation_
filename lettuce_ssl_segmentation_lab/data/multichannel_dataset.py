@@ -1,4 +1,6 @@
 from __future__ import annotations
+import random
+import torchvision.transforms.functional as TF
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,7 +14,7 @@ from torch.utils.data import Dataset
 
 from drsa_net.data.transforms import apply_clahe, apply_watershed
 from lettuce_ssl_segmentation_lab.config import LabConfig
-from lettuce_ssl_segmentation_lab.utils.numba_ops import fast_remap_segments
+from lettuce_ssl_segmentation_lab.utils.numba_ops import fast_remap_segments, fast_compute_exg
 
 
 @dataclass
@@ -25,14 +27,17 @@ class SampleChannels:
     watershed: np.ndarray
     edge: np.ndarray
     segments: np.ndarray
+    exg: np.ndarray
 
 
 class MultiChannelLeafDataset(Dataset):
     """Loads all available representations as a parallel-channel tensor."""
 
-    def __init__(self, manifest_df: pd.DataFrame, config: LabConfig, split: str = "train"):
+    def __init__(self, manifest_df: pd.DataFrame, config: LabConfig, split: str = "train", transform=None):
         self.config = config.resolve()
         self.manifest_df = manifest_df[manifest_df["split"] == split].reset_index(drop=True)
+        self.transform = transform
+        self.mask_dir = self.config.lab_root / "stage5_cam_attention_masks" / "masks"
 
     def __len__(self) -> int:
         return len(self.manifest_df)
@@ -48,6 +53,32 @@ class MultiChannelLeafDataset(Dataset):
         felz_colored = self._load_rgb_optional(row.get("felz_colored_path"), rgb_resized.shape[:2])
         edge = self._compute_edge_map(rgb_resized)
         segments = self._segments_from_felz(felz_raw)
+        exg = fast_compute_exg(rgb_resized.astype(np.float32) / 255.0)
+        
+        # Load Pseudo Mask if available
+        mask_path = self.mask_dir / f"{row['image_stem']}_mask.png"
+        if mask_path.exists():
+            mask = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
+            mask = cv2.resize(mask, (self.config.img_size[1], self.config.img_size[0]), interpolation=cv2.INTER_NEAREST)
+        else:
+            mask = np.zeros(self.config.img_size, dtype=np.uint8)
+
+        if self.transform:
+            # We apply spatial transforms manually to ensure consistency between image and mask
+            if random.random() > 0.5:
+                rgb_resized = TF.hflip(torch.from_numpy(rgb_resized).permute(2, 0, 1)).permute(1, 2, 0).numpy()
+                mask = TF.hflip(torch.from_numpy(mask[None, ...])).squeeze(0).numpy()
+            
+            if random.random() > 0.5:
+                rgb_resized = TF.vflip(torch.from_numpy(rgb_resized).permute(2, 0, 1)).permute(1, 2, 0).numpy()
+                mask = TF.vflip(torch.from_numpy(mask[None, ...])).squeeze(0).numpy()
+                
+            # Non-spatial transforms can be applied via self.transform (which should be color only now)
+            # convert to PIL for standard transforms if needed, or just apply directly if they support tensors
+            from PIL import Image
+            img_pil = Image.fromarray(rgb_resized)
+            img_pil = self.transform(img_pil)
+            rgb_resized = np.array(img_pil)
 
         channels = SampleChannels(
             rgb=rgb_resized,
@@ -58,18 +89,20 @@ class MultiChannelLeafDataset(Dataset):
             watershed=watershed,
             edge=edge,
             segments=segments,
+            exg=exg,
         )
         tensor = self._stack_selected_channels(channels)
 
         return {
             "image": tensor,
+            "mask": torch.from_numpy(mask.astype(np.int64)),
             "segments": torch.from_numpy(segments.astype(np.int64)),
             "class_name": row["class_name"],
-            "label_kind": row["label_kind"],
-            "image_path": row["image_path"],
-            "image_stem": row["image_stem"],
-            "split": row["split"],
-            "chosen_variant": row["chosen_variant"],
+            "label_kind": str(row["label_kind"]) if pd.notna(row["label_kind"]) else "none",
+            "image_path": str(row["image_path"]),
+            "image_stem": str(row["image_stem"]),
+            "split": str(row["split"]),
+            "chosen_variant": str(row["chosen_variant"]) if pd.notna(row["chosen_variant"]) else "none",
         }
 
     def _load_rgb(self, image_path: Path) -> np.ndarray:

@@ -34,6 +34,7 @@ class LabConfig:
         "felz_colored",
         "watershed",
         "edge",
+        "exg",
     )
 
     research_recommendation: str = (
