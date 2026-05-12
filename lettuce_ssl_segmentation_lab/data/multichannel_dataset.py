@@ -44,18 +44,44 @@ class MultiChannelLeafDataset(Dataset):
 
     def __getitem__(self, index: int) -> dict[str, Any]:
         row = self.manifest_df.iloc[index]
-        rgb = self._load_rgb(Path(row["image_path"]))
-        rgb_resized = cv2.resize(rgb, self.config.img_size[::-1], interpolation=cv2.INTER_LINEAR)
-        clahe = apply_clahe(rgb_resized)
-        watershed = apply_watershed(rgb_resized)
-        felz_raw = self._load_gray(row.get("felz_raw_path"), rgb_resized.shape[:2])
-        felz_boundary = self._load_gray(row.get("felz_boundary_path"), rgb_resized.shape[:2])
-        felz_colored = self._load_rgb_optional(row.get("felz_colored_path"), rgb_resized.shape[:2])
-        edge = self._compute_edge_map(rgb_resized)
-        segments = self._segments_from_felz(felz_raw)
-        exg = fast_compute_exg(rgb_resized.astype(np.float32) / 255.0)
+        image_stem = row['image_stem']
         
-        # Load Pseudo Mask if available
+        # --- FAST PATH: Load Pre-calculated Features ---
+        precalc_dir = self.config.lab_root / "stageX_precalculated_features"
+        feat_path = precalc_dir / f"{image_stem}_feat.npy"
+        seg_path = precalc_dir / f"{image_stem}_seg.npy"
+        
+        if feat_path.exists() and seg_path.exists():
+            tensor_uint8 = np.load(str(feat_path))
+            tensor = torch.from_numpy(tensor_uint8.astype(np.float32) / 255.0)
+            segments = np.load(str(seg_path))
+        else:
+            # --- SLOW PATH: Compute on the fly ---
+            rgb = self._load_rgb(Path(row["image_path"]))
+            rgb_resized = cv2.resize(rgb, self.config.img_size[::-1], interpolation=cv2.INTER_LINEAR)
+            clahe = apply_clahe(rgb_resized)
+            watershed = apply_watershed(rgb_resized)
+            felz_raw = self._load_gray(row.get("felz_raw_path"), rgb_resized.shape[:2])
+            felz_boundary = self._load_gray(row.get("felz_boundary_path"), rgb_resized.shape[:2])
+            felz_colored = self._load_rgb_optional(row.get("felz_colored_path"), rgb_resized.shape[:2])
+            edge = self._compute_edge_map(rgb_resized)
+            segments = self._segments_from_felz(felz_raw)
+            exg = fast_compute_exg(rgb_resized.astype(np.float32) / 255.0)
+            
+            channels = SampleChannels(
+                rgb=rgb_resized,
+                clahe=clahe,
+                felz_raw=felz_raw,
+                felz_boundary=felz_boundary,
+                felz_colored=felz_colored,
+                watershed=watershed,
+                edge=edge,
+                segments=segments,
+                exg=exg,
+            )
+            tensor = self._stack_selected_channels(channels)
+
+        # Load Pseudo Mask
         mask_path = self.mask_dir / f"{row['image_stem']}_mask.png"
         if mask_path.exists():
             mask = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
@@ -66,32 +92,22 @@ class MultiChannelLeafDataset(Dataset):
         if self.transform:
             # We apply spatial transforms manually to ensure consistency between image and mask
             if random.random() > 0.5:
-                rgb_resized = TF.hflip(torch.from_numpy(rgb_resized).permute(2, 0, 1)).permute(1, 2, 0).numpy()
+                # Flip the whole tensor if it's spatial
+                tensor = TF.hflip(tensor)
                 mask = TF.hflip(torch.from_numpy(mask[None, ...])).squeeze(0).numpy()
             
             if random.random() > 0.5:
-                rgb_resized = TF.vflip(torch.from_numpy(rgb_resized).permute(2, 0, 1)).permute(1, 2, 0).numpy()
+                tensor = TF.vflip(tensor)
                 mask = TF.vflip(torch.from_numpy(mask[None, ...])).squeeze(0).numpy()
                 
-            # Non-spatial transforms can be applied via self.transform (which should be color only now)
-            # convert to PIL for standard transforms if needed, or just apply directly if they support tensors
+            # Non-spatial transforms (Color Jitter, etc.)
+            # We apply them to the first 3 channels (RGB)
             from PIL import Image
-            img_pil = Image.fromarray(rgb_resized)
+            rgb_tensor = tensor[0:3, :, :]
+            img_pil = Image.fromarray((rgb_tensor.permute(1, 2, 0).numpy() * 255).astype(np.uint8))
             img_pil = self.transform(img_pil)
-            rgb_resized = np.array(img_pil)
-
-        channels = SampleChannels(
-            rgb=rgb_resized,
-            clahe=clahe,
-            felz_raw=felz_raw,
-            felz_boundary=felz_boundary,
-            felz_colored=felz_colored,
-            watershed=watershed,
-            edge=edge,
-            segments=segments,
-            exg=exg,
-        )
-        tensor = self._stack_selected_channels(channels)
+            rgb_aug = torch.from_numpy(np.array(img_pil).astype(np.float32) / 255.0).permute(2, 0, 1)
+            tensor[0:3, :, :] = rgb_aug
 
         return {
             "image": tensor,

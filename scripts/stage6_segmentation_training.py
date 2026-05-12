@@ -143,11 +143,17 @@ def main():
     num_epochs = int(os.environ.get("NUM_EPOCHS", "100"))
     patience = int(os.environ.get("PATIENCE", "15"))
     
+    # Auto-resume logic
+    resume_path = output_dir / "best_model.pth"
+    if not resume_path.exists():
+        resume_path = None
+        
     if os.environ.get("SMOKE_TEST", "false").lower() == "true":
         num_epochs = 1
         print("[INFO] Smoke test enabled: Running 1 epoch.")
+        resume_path = None
         
-    trainer.fit(num_epochs=num_epochs, patience=patience)
+    trainer.fit(num_epochs=num_epochs, patience=patience, resume_path=str(resume_path) if resume_path else None)
     
     print("\n" + "="*80)
     print("Stage 6 Completed Successfully".center(80))

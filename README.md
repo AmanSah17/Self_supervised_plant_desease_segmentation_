@@ -1,49 +1,126 @@
-# Lettuce Disease SSL Segmentation Pipeline
+# Lettuce Disease Segmentation (Self‑Supervised Learning)
 
-This repository implements a 6-stage Self-Supervised Learning (SSL) pipeline for high-fidelity segmentation and classification of lettuce leaf diseases and weeds.
+![Pipeline Overview](./docs/images/pipeline_overview.png)
 
-## 🚀 Research Goal
-To develop a robust segmentation system that can learn from unlabelled or weakly labelled data (folder-level labels) using foundational vision models (DINOv2) and statistical anomaly detection.
+## 📚 Overview
+This repository implements a **six‑stage, self‑supervised multi‑class lettuce disease segmentation pipeline**.  The core idea is to combine **structural anomaly cues** with **semantic class‑activation maps (CAMs)** and train a **SegFormer** model on a **14‑channel representation** of each image.
 
-## 🏗️ 6-Stage Architecture
+| Stage | Purpose | Key Outputs |
+|------|---------|-------------|
+| **1** | Healthy feature learning (DINOv2) | Frozen backbone, per‑pixel healthy statistics |
+| **2** | Healthy feature extraction | Feature embeddings for every leaf (used later) |
+| **3** | Unsupervised anomaly localization | Pixel‑wise anomaly maps (no labels needed) |
+| **4** | Multi‑class head & CAM generation | Class‑specific CAMs for each disease |
+| **5** | CAM‑aware attention fusion + superpixel snapping | **Pseudo‑masks** with 9 semantic classes (background + 8 disease/weeds) |
+| **6** | SegFormer training on 14‑channel stack | Final segmentation model |
 
-### Stage 1: Multi-Representation Indexing
-Builds a comprehensive manifest of the dataset, indexing RGB channels, segments (Felzenszwalb), and class metadata.
+---
 
-### Stage 2: Healthy-Only Representation Learning
-Uses DINOv2 to extract deep features from "healthy" leaves to establish a baseline of "normal" leaf texture and structure.
+## 🏗️ Architecture & 14‑Channel Stack
+The **SegFormer (MiT‑B3)** backbone has been adapted to accept **arbitrary input channels**.  The first patch‑embedding convolution is re‑initialized to match the number of channels.
 
-### Stage 3: Anomaly Localization (PaDiM)
-Models the distribution of healthy leaf patches using multivariate Gaussians. Diseased images are then scored against this distribution to produce **Anomaly Heatmaps**.
+**14 channels** stacked per image:
+1. RGB (3) 
+2. CLAHE‑enhanced RGB (3) 
+3. Excess‑Green index (1) 
+4. Canny edge map (1) 
+5. Watershed segmentation (1) 
+6. Felzenszwalb superpixel raw mask (1) 
+7. Superpixel boundary mask (1) 
+8. Superpixel colored visualization (3) 
 
-### Stage 4: CAM Fusion & Pseudo-Mask Generation
-Trains a multi-class linear probe on top of frozen DINOv2 features to generate **Class Activation Maps (CAM)**. These are fused with anomaly maps and superpixel boundaries to create multi-class training labels.
+The stack is created **offline** (Stage X) and stored as `*.npy` files under:
+```
+lettuce_ssl_segmentation_lab/stageX_precalculated_features/
+```
+During training the `MultiChannelLeafDataset` checks for these files and loads them directly, bypassing the heavy CPU preprocessing.
 
-### Stage 5: Mask Refinement (DenseCRF)
-(In Progress) Uses Conditional Random Fields to refine the pseudo-mask boundaries using high-resolution edge and color information from the original images.
+---
 
-### Stage 6: Multi-Task Segmentation Training
-(Pending) Final training of a supervised model (e.g., SegFormer) using the generated pseudo-masks as ground truth.
+## 🖼️ Transforms & Masks
+* **CLAHE** – local contrast enhancement using OpenCV (`apply_clahe`).
+* **Excess‑Green (ExG)** – fast Numba‑jitted vegetation index (`fast_compute_exg`).
+* **Edge map** – Sobel gradient magnitude.
+* **Watershed** – region‑based segmentation (`apply_watershed`).
+* **Superpixel** – Felzenszwalb algorithm, followed by a fast remap (`fast_remap_segments`).
+* **Pseudo‑masks** – CAM‑aware attention fusion (Stage 5) that combines anomaly maps, CAMs and superpixel consensus.  Masks are stored as PNGs in `stage5_cam_attention_masks/masks/`.
 
-## 🛠️ Technology Stack
-- **Backbone**: DINOv2 (ViT-B/14)
-- **Anomaly Detection**: PaDiM (Patch Distribution Modeling)
-- **Segmentation**: Felzenszwalb Superpixels, DenseCRF
-- **Deep Learning**: PyTorch, TorchVision
-- **Data Handling**: Pandas, OpenCV, Albumentations
+---
 
-## 📁 Project Structure
-- `lettuce_ssl_segmentation_lab/`: Core library package.
-    - `pipeline/`: Implementation of the 6 stages.
-    - `data/`: Dataset loaders and manifest builders.
-    - `utils/`: Feature extractors and background segmenters.
-- `scripts/`: Execution scripts for each stage.
-- `configs/`: YAML configuration files.
+## 🤖 Model & Loss Function
+The training loop lives in `lettuce_ssl_segmentation_lab/pipeline/segmentation_trainer.py`.
 
-## 📈 Current Progress
-- [x] Stage 1: Indexing Complete
-- [x] Stage 2: Healthy Learning Complete
-- [x] Stage 3: Anomaly Localization Complete (PaDiM implemented)
-- [x] Stage 4: Multi-Class Pseudo Masks (8-class support implemented)
-- [ ] Stage 5: DenseCRF Refinement
-- [ ] Stage 6: SegFormer Training
+* **Model** – `SegFormerForSemanticSegmentation` from 🤗 Transformers, dynamically reshaped for 14 input channels.
+* **Optimizer** – AdamW with weight decay.
+* **Losses** –
+  * **Cross‑entropy** for pixel‑wise classification (9 classes).
+  * **Dice loss** (optional, toggled via config) to improve boundary recall.
+  * The total loss is `loss_ce + λ * loss_dice` (λ = 1.0 by default).
+* **Metrics** – mean IoU, precision, recall logged to **MLflow** every epoch.
+* **Early stopping** – patience = 15 epochs (configurable).  Checkpoints (`best_model.pth`) are saved after each improvement.
+
+---
+
+## 📂 Repository Layout
+```
+├─ lettuce_ssl_segmentation_lab/
+│   ├─ config.py                     # global configuration
+│   ├─ data/
+│   │   └─ multichannel_dataset.py   # fast‑path dataset implementation
+│   ├─ pipeline/
+│   │   ├─ models.py                 # model factory, channel adaptation
+│   │   ├─ segmentation_trainer.py   # training loop, resume logic
+│   │   └─ metrics.py                # mIoU, precision, recall
+│   └─ utils/
+│       ├─ numba_ops.py              # ExG, remap implementations
+│       └─ feature_extractor.py      # DINOv2 feature handling (Stage 1‑2)
+├─ scripts/
+│   ├─ stage1_healthy_learning.py
+│   ├─ stage2_healthy_extraction.py
+│   ├─ stage3_anomaly_localization.py
+│   ├─ stage4_pseudo_mask_generation.py
+│   ├─ stage5_cam_attention_masks.py
+│   ├─ stage6_segmentation_training.py
+│   └─ stageX_precalculate_features.py   # offline 14‑channel generation
+└─ work.md                         # detailed pipeline description (already committed)
+```
+
+---
+
+## 🚀 How to Run
+```powershell
+# Activate env (already done in repo)
+conda activate gemma4
+
+# Stage X – pre‑calculate 14‑channel tensors (run once)
+python scripts\stageX_precalculate_features.py
+
+# Train (Stage 6)
+python scripts\stage6_segmentation_training.py   # uses resume logic automatically
+```
+All hyper‑parameters can be overridden via environment variables, e.g.:
+```powershell
+$env:BATCH_SIZE="64"
+$env:NUM_EPOCHS="200"
+python scripts\stage6_segmentation_training.py
+```
+
+---
+
+## 📊 Results (Preview)
+Below are a few sample predictions (pseudo‑mask → final segmentation).  Images are stored in `examples/` and displayed here for the README.
+
+![](file:///C:/Users/amans/.gemini/antigravity/brain/dcc44dd4-f119-4292-86e7-50dfe987d625/example_prediction_1.jpg)
+![](file:///C:/Users/amans/.gemini/antigravity/brain/dcc44dd4-f119-4292-86e7-50dfe987d625/example_prediction_2.jpg)
+
+---
+
+## 📌 References
+* **DINOv2** – Self‑supervised vision transformer pre‑training.
+* **SegFormer** – Efficient Transformer‑CNN hybrid for semantic segmentation.
+* **MLflow** – Experiment tracking and artifact logging.
+* **Felzenszwalb & Watershed** – Classical segmentation techniques used for structural cues.
+
+---
+
+*Created by Antigravity AI Assistant – © 2026*

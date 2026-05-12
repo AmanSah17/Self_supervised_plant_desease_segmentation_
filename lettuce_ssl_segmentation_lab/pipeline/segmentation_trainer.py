@@ -120,10 +120,23 @@ class SegmentationTrainer:
         
         return results
 
-    def fit(self, num_epochs: int, patience: int = 15):
-        print(f"[INFO] Starting training for {num_epochs} epochs on {self.device} (Patience: {patience})")
+    def fit(self, num_epochs: int, patience: int = 15, resume_path: Optional[str] = None):
+        start_epoch = 1
+        best_miou = 0
+        epochs_no_improve = 0
         
-        with mlflow.start_run():
+        if resume_path and Path(resume_path).exists():
+            print(f"[INFO] Resuming training from {resume_path}")
+            checkpoint = torch.load(resume_path, map_location=self.device)
+            self.model.load_state_dict(checkpoint['model_state_dict'])
+            self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            start_epoch = checkpoint['epoch'] + 1
+            best_miou = checkpoint.get('miou', 0)
+            print(f"  [OK] Resumed from epoch {checkpoint['epoch']} with best mIoU {best_miou:.4f}")
+
+        print(f"[INFO] Starting training from epoch {start_epoch} to {num_epochs} on {self.device} (Patience: {patience})")
+        
+        with mlflow.start_run(nested=True if resume_path else False):
             # Log hyperparameters
             mlflow.log_params({
                 "model_type": self.model.__class__.__name__,
@@ -131,13 +144,11 @@ class SegmentationTrainer:
                 "lr": self.optimizer.param_groups[0]['lr'],
                 "num_epochs": num_epochs,
                 "num_classes": self.num_classes,
-                "patience": patience
+                "patience": patience,
+                "resumed": resume_path is not None
             })
             
-            best_miou = 0
-            epochs_no_improve = 0
-            
-            for epoch in range(1, num_epochs + 1):
+            for epoch in range(start_epoch, num_epochs + 1):
                 train_loss = self.train_epoch(epoch)
                 val_results = self.validate(epoch)
                 
