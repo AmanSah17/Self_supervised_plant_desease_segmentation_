@@ -107,11 +107,24 @@ python scripts\stage6_segmentation_training.py
 
 ---
 
-## 📊 Results (Preview)
-Below are a few sample predictions (pseudo‑mask → final segmentation).  Images are stored in `examples/` and displayed here for the README.
+## 📊 Validation Inference & Analytics (Stage 7)
+After training, the pipeline integrates multiple diagnostic signals into a single validation output. This allows for cross-verification between structural anomalies and semantic predictions.
 
-![](file:///C:/Users/amans/.gemini/antigravity/brain/dcc44dd4-f119-4292-86e7-50dfe987d625/example_prediction_1.jpg)
-![](file:///C:/Users/amans/.gemini/antigravity/brain/dcc44dd4-f119-4292-86e7-50dfe987d625/example_prediction_2.jpg)
+### How the SSL Pipeline Works:
+1.  **Anomaly Scores (PaDiM)**: We model the healthy leaf patch distribution using DINOv2 features. Deviations from this "norm" are flagged as anomalies. This provides a **class-agnostic structural cue** for disease localization.
+2.  **Class Probability Scores**: The trained SegFormer model produces pixel-wise confidence maps for each of the 8 disease classes. This provides **semantic classification** evidence.
+3.  **Integrated Disease Maps**: By fusing the semantic SegFormer masks with the structural anomaly heatmaps, we achieve high-fidelity localization that is robust to both unseen patterns and complex backgrounds.
+
+### Sample Inference Results
+The following high-resolution (720 DPI) plots demonstrate the model's performance on the validation set. Each row shows:
+- **Original RGB**: The source input.
+- **Predicted Mask**: Semantic segmentation from SegFormer.
+- **Class Probability**: Confidence map for the dominant disease.
+- **Anomaly Map**: PaDiM-based structural deviation heatmap.
+
+![Batch 0 Results](./docs/images/inference_results/batch_000_validation_results.png)
+![Batch 5 Results](./docs/images/inference_results/batch_005_validation_results.png)
+![Batch 10 Results](./docs/images/inference_results/batch_010_validation_results.png)
 
 ---
 
