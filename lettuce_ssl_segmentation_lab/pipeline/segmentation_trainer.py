@@ -62,6 +62,12 @@ class SegmentationTrainer:
                 logits = outputs.logits
             else:
                 logits = outputs if isinstance(outputs, torch.Tensor) else outputs['out']
+
+            # Upsample for loss calculation if needed (e.g. SegFormer 1/4 size)
+            if logits.shape[-2:] != masks.shape[-2:]:
+                logits = torch.nn.functional.interpolate(
+                    logits, size=masks.shape[-2:], mode='bilinear', align_corners=False
+                )
                 
             loss = self.criterion(logits, masks)
             loss.backward()
