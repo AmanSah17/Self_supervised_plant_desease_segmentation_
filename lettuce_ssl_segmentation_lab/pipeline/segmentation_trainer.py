@@ -111,7 +111,7 @@ class SegmentationTrainer:
             
         if len(self.val_loader) == 0:
             print("[WARNING] Validation loader is empty. Skipping validation metrics.")
-            return {"miou": 0, "precision": 0, "recall": 0}
+            return {"miou": 0, "precision": 0, "recall": 0, "accuracy": 0}
             
         avg_loss = total_loss / len(self.val_loader)
         results = metrics.compute()
@@ -121,8 +121,9 @@ class SegmentationTrainer:
         mlflow.log_metric("val_miou", results["miou"], step=epoch)
         mlflow.log_metric("val_precision", results["precision"], step=epoch)
         mlflow.log_metric("val_recall", results["recall"], step=epoch)
+        mlflow.log_metric("val_accuracy", results["accuracy"], step=epoch)
         
-        print(f"\n[Val Results] Loss: {avg_loss:.4f} | mIoU: {results['miou']:.4f} | Precision: {results['precision']:.4f}")
+        print(f"\n[Val Results] Loss: {avg_loss:.4f} | mIoU: {results['miou']:.4f} | Acc: {results['accuracy']:.4f} | Prec: {results['precision']:.4f}")
         
         return results
 

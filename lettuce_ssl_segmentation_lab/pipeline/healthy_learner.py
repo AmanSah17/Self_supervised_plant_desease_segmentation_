@@ -84,7 +84,7 @@ class HealthyRepresentationLearner:
         self._log(f"Found {len(healthy_indices)} healthy images in {split} split")
         
         if len(healthy_indices) == 0:
-            self._log(f"⚠️  No healthy images in {split} split!", level="warning")
+            self._log(f"[WARN] No healthy images in {split} split!", level="warning")
             return None
         
         self.healthy_dataset = Subset(dataset, healthy_indices)
@@ -186,7 +186,7 @@ class HealthyRepresentationLearner:
         # Concatenate all features
         all_features = np.concatenate(all_features, axis=0)
         
-        self._log(f"\n✓ Extracted {len(all_features)} feature vectors")
+        self._log(f"\n[OK] Extracted {len(all_features)} feature vectors")
         self._log(f"  Shape: {all_features.shape}")
         self._log(f"  Dtype: {all_features.dtype}")
         
@@ -251,7 +251,7 @@ class HealthyRepresentationLearner:
         # Save features
         features_path = self.output_dir / f"healthy_features_{split}.npy"
         np.save(features_path, features)
-        self._log(f"✓ Features saved: {features_path}")
+        self._log(f"[OK] Features saved: {features_path}")
         
         # Save statistics
         stats_path = self.output_dir / f"healthy_stats_{split}.json"
@@ -276,13 +276,13 @@ class HealthyRepresentationLearner:
         
         with open(stats_path, 'w') as f:
             json.dump(stats_serializable, f, indent=2)
-        self._log(f"✓ Statistics saved: {stats_path}")
+        self._log(f"[OK] Statistics saved: {stats_path}")
         
         # Save metadata
         metadata_path = self.output_dir / f"healthy_metadata_{split}.pkl"
         with open(metadata_path, 'wb') as f:
             pickle.dump(metadata, f)
-        self._log(f"✓ Metadata saved: {metadata_path}")
+        self._log(f"[OK] Metadata saved: {metadata_path}")
         
         # Save summary
         summary = {
@@ -303,7 +303,7 @@ class HealthyRepresentationLearner:
         summary_path = self.output_dir / f"healthy_bank_summary_{split}.json"
         with open(summary_path, 'w') as f:
             json.dump(summary, f, indent=2)
-        self._log(f"✓ Summary saved: {summary_path}")
+        self._log(f"[OK] Summary saved: {summary_path}")
         
         return features_path
     
@@ -361,7 +361,7 @@ class HealthyRepresentationLearner:
             )
             
             self._log("\n" + "="*80)
-            self._log("✓ STAGE 2 COMPLETED SUCCESSFULLY")
+            self._log("[OK] STAGE 2 COMPLETED SUCCESSFULLY")
             self._log("="*80)
             
             return {
@@ -373,7 +373,7 @@ class HealthyRepresentationLearner:
             }
         
         except Exception as e:
-            self._log(f"\n✗ Pipeline failed: {str(e)}", level="error")
+            self._log(f"\n[ERROR] Pipeline failed: {str(e)}", level="error")
             import traceback
             traceback.print_exc()
             

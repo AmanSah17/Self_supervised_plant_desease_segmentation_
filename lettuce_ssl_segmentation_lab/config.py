@@ -8,7 +8,7 @@ from typing import Optional, Sequence
 @dataclass
 class LabConfig:
     repo_root: Path = Path(__file__).resolve().parents[1]
-    dataset_base: Path = Path("Lettuce_disease_datasets_split")
+    dataset_base: Path = Path("Roboflow_Dataset")
     felz_base: Path = Path("felzenszwalb_masks_output")
     lab_root: Path = Path("lettuce_ssl_segmentation_lab")
     logs_dir: Path = Path("lettuce_ssl_segmentation_lab/logs")
@@ -16,7 +16,7 @@ class LabConfig:
 
     splits: Sequence[str] = ("train", "validation", "test")
     class_names: Sequence[str] = (
-        "BACT", "DML", "HLTY", "PML", "SBL", "SPW", "VIRL", "WLBL",
+        "BACT", "DML", "HLTY", "PML", "SBL", "SPW", "VIRL", "WLBL", "Leaf-Diseases"
     )
     healthy_class_name: str = "HLTY"
 

@@ -76,7 +76,7 @@ def main():
     # Get diseased images from train and val
     all_datasets = {
         "train": MultiChannelLeafDataset(manifest_df, config, split="train"),
-        "val": MultiChannelLeafDataset(manifest_df, config, split="val")
+        "validation": MultiChannelLeafDataset(manifest_df, config, split="validation")
     }
     
     # Create output subdirectories

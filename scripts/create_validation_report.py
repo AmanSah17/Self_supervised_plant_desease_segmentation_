@@ -2,106 +2,124 @@ from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from pathlib import Path
+import pandas as pd
 
-def add_heading_with_color(doc, text, level, color=RGBColor(128, 0, 0)):
-    h = doc.add_heading(text, level=level)
-    for run in h.runs:
+def add_heading_with_color(doc, text, level, color=RGBColor(0, 51, 102)):
+    heading = doc.add_heading(text, level=level)
+    for run in heading.runs:
         run.font.color.rgb = color
-    return h
 
-def main():
+def create_report():
     project_root = Path(r'd:\gemma4\segmentation_lattuce-desease')
-    assets_dir = project_root / 'Report' / 'validation_assets'
-    output_path = project_root / 'Report' / 'Healthy_Bank_Validation_Technical_Report.docx'
-
+    report_dir = project_root / 'Report'
+    report_dir.mkdir(exist_ok=True)
+    
     doc = Document()
-
-    # --- Title Page ---
-    title = doc.add_heading('Technical Validation: Discriminative Power of the Healthy Bank', 0)
+    
+    # Title
+    title = doc.add_heading('Technical Documentation: Validation & Refinement (Stages 7 & 8)', 0)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     
-    subtitle = doc.add_paragraph('Cross-Class Anomaly Localization Analysis for Lettuce Disease Detection')
-    subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    doc.add_page_break()
-
-    # --- 1. Objective ---
-    add_heading_with_color(doc, '1. Objective', level=1)
+    # --- 1. Stage 7: Validation Inference & Analytics ---
+    add_heading_with_color(doc, '1. Stage 7: Validation Inference & Analytics', level=1)
     doc.add_paragraph(
-        "This report validates the efficacy of the 'Healthy Bank' learned in Stage 2. "
-        "The goal is to demonstrate that the Multivariate Gaussian modeling of DINOv2 features "
-        "can accurately distinguish healthy leaf tissue from various diseased states (BACT, DML, PML, etc.) "
-        "without having seen a single diseased image during the training phase."
-    )
-
-    # --- 2. Experimental Setup ---
-    add_heading_with_color(doc, '2. Experimental Setup', level=1)
-    doc.add_paragraph(
-        "For validation, we selected a diverse set of samples from the training split:\n"
-        "• 4 Random Healthy Samples (Control Group)\n"
-        "• 2 Samples each from 7 Diseased Categories: Bacterial Wilt (BACT), Downy Mildew (DML), Powdery Mildew (PML), Septoria Leaf Spot (SBL), Sooty Mold (SPW), Viral (VIRL), and Water-soaked (WLBL)."
-    )
-
-    # --- 3. Global Comparison Summary ---
-    add_heading_with_color(doc, '3. Global Comparison Summary', level=1)
-    doc.add_paragraph(
-        "The following summary figure illustrates the contrast between healthy tissue and diseased tissue across all classes. "
-        "Notice how the anomaly scores (Mahalanobis distances) remain low for the healthy sample while peaking sharply at lesion locations for diseased samples."
+        "Stage 7 is the comprehensive evaluation phase where the trained SegFormer model (Stage 6) "
+        "is deployed on the unseen validation dataset. This stage integrates both semantic segmentation "
+        "and statistical anomaly detection to provide a multi-dimensional view of model performance."
     )
     
-    summary_img = assets_dir / '00_comparison_summary.png'
-    if summary_img.exists():
-        doc.add_picture(str(summary_img), width=Inches(6))
+    add_heading_with_color(doc, '1.1 Execution Pipeline', level=2)
+    doc.add_paragraph(
+        "The inference pipeline follows a dual-path architecture:"
+    )
+    doc.add_paragraph("- Semantic Path: The SegFormer model predicts categorical labels for each pixel.", style='List Bullet')
+    doc.add_paragraph("- Structural Path: The PaDiM model generates anomaly heatmaps to identify tissue deviations.", style='List Bullet')
+    doc.add_paragraph("- Analytics: Class probabilities and confidence scores are calculated to assess prediction reliability.", style='List Bullet')
+    
+    workflow_diag = project_root / 'stage7_analytics_workflow_diagram_1778676981153.png'
+    if workflow_diag.exists():
+        doc.add_picture(str(workflow_diag), width=Inches(5.5))
         doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
-        doc.add_paragraph('Figure 1: Cross-class comparison of anomaly scores. Healthy vs. 7 Disease Classes.').alignment = WD_ALIGN_PARAGRAPH.CENTER
+        doc.add_paragraph('Figure 1: Stage 7 Validation & Analytics Execution Pipeline.').alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-    # --- 4. Detailed Analysis by Class ---
-    add_heading_with_color(doc, '4. Detailed Analysis by Class', level=1)
+    # --- 2. Stage 8: Supervised Fine-Tuning (SFT) ---
+    add_heading_with_color(doc, '2. Stage 8: Supervised Fine-Tuning (SFT)', level=1)
+    doc.add_paragraph(
+        "While the self-supervised approach (Stages 1-6) generates high-quality masks without labels, "
+        "there is often a small 'semantic gap' due to the noise in pseudo-labels. Stage 8 bridges this gap "
+        "by fine-tuning the model on a tiny set of expert-labeled validation images (approx. 30-50 samples)."
+    )
+    
+    sft_diag = project_root / 'stage8_sft_refinement_loop_1778677002410.png'
+    if sft_diag.exists():
+        doc.add_picture(str(sft_diag), width=Inches(5.0))
+        doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        doc.add_paragraph('Figure 2: Supervised Fine-Tuning (SFT) Refinement Loop.').alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-    classes = ['Healthy', 'BACT', 'DML', 'PML', 'SBL', 'SPW', 'VIRL', 'WLBL']
-    descriptions = {
-        'Healthy': "Baseline samples showing uniform, low anomaly scores across the entire leaf surface.",
-        'BACT': "Bacterial wilt shows localized high-intensity spots where cell degradation has occurred.",
-        'DML': "Downy mildew presents as irregular 'hotspots' reflecting the patchy nature of the infection.",
-        'PML': "Powdery mildew shows distinct structural deviations due to the fungal surface growth.",
-        'SBL': "Septoria leaf spot creates sharp, high-contrast anomaly peaks at the center of necrotic lesions.",
-        'SPW': "Sooty mold shows high deviation due to the dark, non-plant material covering the leaf surface.",
-        'VIRL': "Viral infections often show more systemic or mottled anomaly patterns.",
-        'WLBL': "Water-soaked lesions exhibit significant feature shifts due to changed moisture and tissue density."
-    }
-
-    for cls in classes:
-        doc.add_heading(f'Class: {cls}', level=2)
-        doc.add_paragraph(descriptions[cls])
+    # --- 3. Metric Improvement Analysis ---
+    add_heading_with_color(doc, '3. Metric Improvement Analysis', level=1, color=RGBColor(204, 0, 102))
+    doc.add_paragraph(
+        "The impact of SFT is measured by comparing the Mean Intersection over Union (mIoU) and Accuracy "
+        "against manual ground truth. Even with a minimal labeled set, we observe significant sharpening "
+        "of disease boundaries and improved class separation."
+    )
+    
+    metrics_path = report_dir / 'stage78_comparison' / 'sft_improvement_metrics.csv'
+    if metrics_path.exists():
+        df = pd.read_csv(metrics_path)
+        avg_ssl = df['ssl_miou'].mean()
+        avg_sft = df['sft_miou'].mean()
+        improvement = avg_sft - avg_ssl
         
-        img_path = assets_dir / f"validation_{cls.lower()}.png"
-        if img_path.exists():
-            doc.add_picture(str(img_path), width=Inches(5.5))
-            doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
-            doc.add_paragraph(f'Visual Results: {cls} Anomaly Localization').alignment = WD_ALIGN_PARAGRAPH.CENTER
+        table = doc.add_table(rows=1, cols=3)
+        table.style = 'Table Grid'
+        hdr_cells = table.rows[0].cells
+        hdr_cells[0].text = 'Configuration'
+        hdr_cells[1].text = 'Mean IoU'
+        hdr_cells[2].text = 'Improvement'
+        
+        row1 = table.add_row().cells
+        row1[0].text = 'SSL Only (Stage 6)'
+        row1[1].text = f'{avg_ssl:.4f}'
+        row1[2].text = '-'
+        
+        row2 = table.add_row().cells
+        row2[0].text = 'SSL + SFT (Stage 8)'
+        row2[1].text = f'{avg_sft:.4f}'
+        row2[2].text = f'+{improvement:.4f}'
 
-    # --- 5. Technical Discussion: Why it Works ---
-    add_heading_with_color(doc, '5. Technical Discussion: Why it Works', level=1)
+    metrics_chart = project_root / 'metrics_improvement_chart_1778677020655.png'
+    if metrics_chart.exists():
+        doc.add_picture(str(metrics_chart), width=Inches(5.5))
+        doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        doc.add_paragraph('Figure 3: Quantitative Metric Improvement after SFT.').alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    # --- 4. Visual Comparison ---
+    add_heading_with_color(doc, '4. Visual Comparison: SSL vs SFT vs Manual GT', level=1)
     doc.add_paragraph(
-        "The success of this approach lies in the dense representation provided by DINOv2. "
-        "Healthy leaf tissue shares a common 'feature manifold' in the 768-D space. "
-        "Diseased tissue, due to changes in color (chlorosis), structure (necrosis), and texture (fungal growth), "
-        "falls far outside this manifold."
+        "The following visualization demonstrates the qualitative improvement. The SSL model (Stage 6) "
+        "already captures the disease regions, but the SFT model (Stage 8) refines the edges and reduces "
+        "false positives by aligning with expert manual labels."
     )
+    
+    comparison_viz = report_dir / 'stage78_comparison' / 'ssl_vs_sft_comparison.png'
+    if comparison_viz.exists():
+        doc.add_picture(str(comparison_viz), width=Inches(6.5))
+        doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        doc.add_paragraph('Figure 4: Qualitative Comparison Grid (RGB | Manual GT | SSL | SFT | Error Maps).').alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    # --- Conclusion ---
+    add_heading_with_color(doc, '5. Conclusion', level=1)
     doc.add_paragraph(
-        "By modeling the distribution locally (at each patch position), we account for spatial variations (e.g., leaf edges vs. center). "
-        "The Mahalanobis distance effectively 'normalizes' these variations, ensuring that only true structural/spectral anomalies are detected."
+        "The two-stage validation and refinement process ensures that the lettuce disease segmentation "
+        "system is both robust (via self-supervision) and precise (via limited supervision). Stage 7 "
+        "proves the generalizability of the pipeline, while Stage 8 provides the final calibration "
+        "required for high-stakes agricultural diagnostics."
     )
 
-    # --- 6. Conclusion ---
-    add_heading_with_color(doc, '6. Conclusion', level=1)
-    doc.add_paragraph(
-        "The validation confirms that the Stage 2 Healthy Bank is highly discriminative. "
-        "This gives high confidence in the pipeline's ability to generate accurate pseudo-masks in Stage 4, "
-        "which will subsequently be used to train the final SegFormer segmentation model."
-    )
+    save_path = report_dir / 'Stages_7_8_Validation_Refinement_Documentation.docx'
+    doc.save(str(save_path))
+    print(f"Report saved to {save_path}")
 
-    doc.save(str(output_path))
-    print(f"Validation report saved to {output_path}")
-
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    create_report()

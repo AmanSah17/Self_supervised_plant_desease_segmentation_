@@ -110,7 +110,7 @@ class CheckpointManager:
             return data, metadata
         
         except Exception as e:
-            print(f"✗ Error loading checkpoint: {str(e)}")
+            print(f"[ERROR] Error loading checkpoint: {str(e)}")
             return None, None
     
     def get_resume_info(self) -> tuple[int, int, int]:

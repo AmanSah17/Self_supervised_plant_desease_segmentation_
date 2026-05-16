@@ -1,0 +1,9 @@
+path: dataset_yolo
+
+train: images/train
+val: images/val
+test: images/test
+
+names:
+  0: HEALTHY
+  1: LEAF_DISEASE

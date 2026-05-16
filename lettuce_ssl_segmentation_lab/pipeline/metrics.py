@@ -53,10 +53,14 @@ class SegmentationMetrics:
         recall = intersection / (np.sum(cm, axis=1) + 1e-8)
         m_recall = np.mean(recall)
         
+        # Overall Accuracy
+        accuracy = np.sum(intersection) / (np.sum(cm) + 1e-8)
+        
         return {
             "miou": float(miou),
             "precision": float(m_precision),
             "recall": float(m_recall),
+            "accuracy": float(accuracy),
             "class_iou": iou.tolist(),
             "class_precision": precision.tolist(),
             "class_recall": recall.tolist()

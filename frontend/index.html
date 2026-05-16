@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lettuce Disease Segmentation - Live Inference</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #667eea;
+            --secondary: #764ba2;
+            --success: #48bb78;
+            --danger: #f56565;
+            --warning: #ed8936;
+            --dark: #2d3748;
+            --light: #f7fafc;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: var(--dark);
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        header p {
+            font-size: 1.1em;
+            color: #666;
+        }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        .panel {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+        }
+
+        .panel h2 {
+            color: var(--dark);
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 3px solid var(--primary);
+            font-size: 1.5em;
+        }
+
+        .upload-zone {
+            border: 3px dashed var(--primary);
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.05), rgba(118, 75, 162, 0.05));
+        }
+
+        .upload-zone:hover {
+            border-color: var(--secondary);
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
+        }
+
+        .upload-zone.dragover {
+            border-color: var(--success);
+            background: linear-gradient(135deg, rgba(72, 187, 120, 0.1), rgba(72, 187, 120, 0.05));
+        }
+
+        .upload-zone-icon {
+            font-size: 3em;
+            margin-bottom: 15px;
+        }
+
+        .upload-zone-text {
+            font-size: 1.1em;
+            color: var(--dark);
+            margin-bottom: 10px;
+        }
+
+        .upload-zone-hint {
+            font-size: 0.9em;
+            color: #999;
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        .button {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 15px;
+        }
+
+        .button-primary {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+        }
+
+        .button-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .button-secondary {
+            background: var(--light);
+            color: var(--primary);
+            border: 2px solid var(--primary);
+        }
+
+        .button-secondary:hover {
+            background: var(--primary);
+            color: white;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+
+        .status-queued {
+            background: var(--warning);
+        }
+
+        .status-processing {
+            background: var(--primary);
+        }
+
+        .status-completed {
+            background: var(--success);
+        }
+
+        .status-failed {
+            background: var(--danger);
+        }
+
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 currentColor;
+            }
+            70% {
+                box-shadow: 0 0 0 10px rgba(0, 0, 0, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+            }
+        }
+
+        .image-preview {
+            width: 100%;
+            border-radius: 10px;
+            margin-top: 15px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            display: none;
+        }
+
+        .image-preview.show {
+            display: block;
+        }
+
+        .results-panel {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+            margin-bottom: 30px;
+        }
+
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .result-item {
+            background: var(--light);
+            padding: 20px;
+            border-radius: 10px;
+            border-left: 5px solid var(--primary);
+        }
+
+        .result-label {
+            font-size: 0.9em;
+            color: #999;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .result-value {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: var(--dark);
+        }
+
+        .disease-badge {
+            display: inline-block;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 1.1em;
+            margin-top: 10px;
+            color: white;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+        }
+
+        .mask-container {
+            position: relative;
+            display: inline-block;
+            width: 100%;
+            margin-top: 20px;
+        }
+
+        .mask-image {
+            width: 100%;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            display: none;
+        }
+
+        .mask-image.show {
+            display: block;
+        }
+
+        .spinner {
+            border: 4px solid var(--light);
+            border-top: 4px solid var(--primary);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .loading-text {
+            text-align: center;
+            color: var(--primary);
+            font-weight: 600;
+            margin-top: 10px;
+        }
+
+        .analytics-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        .analytics-table th {
+            background: var(--primary);
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        .analytics-table td {
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .analytics-table tr:hover {
+            background: var(--light);
+        }
+
+        .color-legend {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .color-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .color-box {
+            width: 30px;
+            height: 30px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+
+        .error-message {
+            background: rgba(245, 101, 101, 0.1);
+            border-left: 5px solid var(--danger);
+            color: var(--danger);
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            display: none;
+        }
+
+        .error-message.show {
+            display: block;
+        }
+
+        .success-message {
+            background: rgba(72, 187, 120, 0.1);
+            border-left: 5px solid var(--success);
+            color: var(--success);
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            display: none;
+        }
+
+        .success-message.show {
+            display: block;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .results-grid {
+                grid-template-columns: 1fr;
+            }
+
+            header h1 {
+                font-size: 1.8em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🌱 Lettuce Disease Segmentation</h1>
+            <p>Real-time GPU-Accelerated Disease Detection & Analysis</p>
+        </header>
+
+        <div class="main-grid">
+            <!-- Upload Panel -->
+            <div class="panel">
+                <h2>📤 Upload Image</h2>
+                <div class="upload-zone" id="uploadZone">
+                    <div class="upload-zone-icon">📁</div>
+                    <div class="upload-zone-text">Click to upload or drag & drop</div>
+                    <div class="upload-zone-hint">PNG, JPG, or JPEG (Max 50MB)</div>
+                </div>
+                <input type="file" id="fileInput" accept="image/*">
+                <img id="preview" class="image-preview" alt="Preview">
+                <div id="errorMsg" class="error-message"></div>
+                <div id="successMsg" class="success-message"></div>
+            </div>
+
+            <!-- Status Panel -->
+            <div class="panel">
+                <h2>📊 Job Status</h2>
+                <div id="statusArea">
+                    <p style="color: #999; text-align: center;">Upload an image to start inference</p>
+                </div>
+                <button class="button button-secondary" id="pollButton" style="width: 100%; display: none;">
+                    Check Status
+                </button>
+            </div>
+        </div>
+
+        <!-- Results Panel -->
+        <div id="resultsPanel" class="results-panel" style="display: none;">
+            <h2>📈 Inference Results</h2>
+            
+            <div class="results-grid">
+                <div class="result-item">
+                    <div class="result-label">Dominant Disease</div>
+                    <div class="disease-badge" id="diseaseClass">-</div>
+                </div>
+                <div class="result-item">
+                    <div class="result-label">Confidence Score</div>
+                    <div class="result-value" id="confidenceScore">-</div>
+                </div>
+                <div class="result-item">
+                    <div class="result-label">Disease Spread Score</div>
+                    <div class="result-value" id="diseaseSpread">-</div>
+                </div>
+                <div class="result-item">
+                    <div class="result-label">Processing Time</div>
+                    <div class="result-value" id="processingTime">-</div>
+                </div>
+            </div>
+
+            <!-- Segmentation Visualization -->
+            <div style="margin-top: 30px;">
+                <h3 style="margin-bottom: 15px; color: var(--dark);">Segmentation Mask</h3>
+                <img id="maskImage" class="mask-image" alt="Segmentation Mask">
+                <div id="maskLoading" class="spinner" style="display: none;"></div>
+            </div>
+
+            <!-- Disease Distribution -->
+            <div style="margin-top: 30px;">
+                <h3 style="margin-bottom: 15px; color: var(--dark);">Per-Class Distribution</h3>
+                <table class="analytics-table">
+                    <thead>
+                        <tr>
+                            <th>Disease Class</th>
+                            <th>Pixel Count</th>
+                            <th>Percentage</th>
+                        </tr>
+                    </thead>
+                    <tbody id="distributionTable">
+                        <tr><td colspan="3" style="text-align: center; color: #999;">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Color Legend -->
+            <div style="margin-top: 30px;">
+                <h3 style="margin-bottom: 15px; color: var(--dark);">Color Legend</h3>
+                <div class="color-legend" id="colorLegend"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const API_BASE_URL = 'http://localhost:8000';
+        const DISEASE_COLORS = {
+            'background': '#000000',
+            'BACT': '#00FF00',
+            'DML': '#FF0000',
+            'HLTY': '#0000FF',
+            'PML': '#FFFF00',
+            'SBL': '#FFA500',
+            'SPW': '#800080',
+            'VIRL': '#00FFFF',
+            'WLBL': '#FFC0CB'
+        };
+
+        let currentJobId = null;
+        let pollInterval = null;
+
+        // DOM elements
+        const uploadZone = document.getElementById('uploadZone');
+        const fileInput = document.getElementById('fileInput');
+        const preview = document.getElementById('preview');
+        const statusArea = document.getElementById('statusArea');
+        const resultsPanel = document.getElementById('resultsPanel');
+        const pollButton = document.getElementById('pollButton');
+        const errorMsg = document.getElementById('errorMsg');
+        const successMsg = document.getElementById('successMsg');
+
+        // Event listeners
+        uploadZone.addEventListener('click', () => fileInput.click());
+        uploadZone.addEventListener('dragover', handleDragOver);
+        uploadZone.addEventListener('dragleave', handleDragLeave);
+        uploadZone.addEventListener('drop', handleDrop);
+        fileInput.addEventListener('change', handleFileSelect);
+        pollButton.addEventListener('click', pollJobStatus);
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            uploadZone.classList.add('dragover');
+        }
+
+        function handleDragLeave() {
+            uploadZone.classList.remove('dragover');
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            uploadZone.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                fileInput.files = files;
+                handleFileSelect();
+            }
+        }
+
+        async function handleFileSelect() {
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            // Validate file
+            if (!file.type.startsWith('image/')) {
+                showError('Please select a valid image file');
+                return;
+            }
+
+            if (file.size > 50 * 1024 * 1024) {
+                showError('File size must be less than 50MB');
+                return;
+            }
+
+            // Show preview
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                preview.src = e.target.result;
+                preview.classList.add('show');
+            };
+            reader.readAsDataURL(file);
+
+            // Upload and submit inference
+            await submitInference(file);
+        }
+
+        async function submitInference(file) {
+            try {
+                showLoading('Uploading image and queuing inference...');
+
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const response = await fetch(`${API_BASE_URL}/infer`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Upload failed: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                currentJobId = data.job_id;
+
+                showSuccess(`Inference job queued: ${data.job_id}`);
+                updateStatusUI('Queued');
+                
+                pollButton.style.display = 'block';
+                
+                // Auto-poll
+                startAutoPolling();
+
+            } catch (error) {
+                showError(`Error: ${error.message}`);
+            }
+        }
+
+        function startAutoPolling() {
+            if (pollInterval) clearInterval(pollInterval);
+            pollJobStatus(); // Immediate check
+            pollInterval = setInterval(pollJobStatus, 2000);
+        }
+
+        async function pollJobStatus() {
+            if (!currentJobId) return;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/result/${currentJobId}`);
+                
+                if (!response.ok) {
+                    throw new Error(`Status check failed: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                updateStatusUI(data.status);
+
+                if (data.status === 'completed') {
+                    clearInterval(pollInterval);
+                    displayResults(data.result);
+                } else if (data.status === 'failed') {
+                    clearInterval(pollInterval);
+                    showError(`Inference failed: ${data.error}`);
+                }
+
+            } catch (error) {
+                console.error('Poll error:', error);
+            }
+        }
+
+        function updateStatusUI(status) {
+            const statusMap = {
+                'queued': { icon: '⏳', text: 'Queued', class: 'status-queued' },
+                'processing': { icon: '⚙️', text: 'Processing', class: 'status-processing' },
+                'completed': { icon: '✅', text: 'Completed', class: 'status-completed' },
+                'failed': { icon: '❌', text: 'Failed', class: 'status-failed' }
+            };
+
+            const statusInfo = statusMap[status] || { icon: '❓', text: 'Unknown', class: 'status-queued' };
+            
+            statusArea.innerHTML = `
+                <div style="text-align: center; padding: 20px;">
+                    <div class="status-indicator ${statusInfo.class}"></div>
+                    <div style="font-size: 1.3em; font-weight: 600; margin-top: 10px;">
+                        ${statusInfo.icon} ${statusInfo.text}
+                    </div>
+                </div>
+            `;
+        }
+
+        async function displayResults(result) {
+            try {
+                // Show results panel
+                resultsPanel.style.display = 'block';
+
+                // Update metrics
+                document.getElementById('diseaseClass').textContent = result.dominant_disease;
+                document.getElementById('confidenceScore').textContent = 
+                    (result.confidence_score * 100).toFixed(2) + '%';
+                document.getElementById('diseaseSpread').textContent = 
+                    result.disease_spread_score.toFixed(2) + '%';
+                document.getElementById('processingTime').textContent = 'Real-time';
+
+                // Load and display mask
+                const maskResponse = await fetch(`${API_BASE_URL}/mask/${currentJobId}`);
+                if (maskResponse.ok) {
+                    const maskBlob = await maskResponse.blob();
+                    const maskUrl = URL.createObjectURL(maskBlob);
+                    document.getElementById('maskImage').src = maskUrl;
+                    document.getElementById('maskImage').classList.add('show');
+                }
+
+                // Update distribution table
+                const tbody = document.getElementById('distributionTable');
+                tbody.innerHTML = '';
+                
+                for (const [className, data] of Object.entries(result.per_class_distribution)) {
+                    const row = tbody.insertRow();
+                    row.innerHTML = `
+                        <td><strong>${className}</strong></td>
+                        <td>${data.pixel_count.toLocaleString()}</td>
+                        <td>${data.percentage.toFixed(2)}%</td>
+                    `;
+                }
+
+                // Update color legend
+                const legend = document.getElementById('colorLegend');
+                legend.innerHTML = '';
+                
+                for (const [className, color] of Object.entries(DISEASE_COLORS)) {
+                    const item = document.createElement('div');
+                    item.className = 'color-item';
+                    item.innerHTML = `
+                        <div class="color-box" style="background-color: ${color};"></div>
+                        <span>${className}</span>
+                    `;
+                    legend.appendChild(item);
+                }
+
+                showSuccess('Inference completed successfully!');
+
+            } catch (error) {
+                showError(`Error displaying results: ${error.message}`);
+            }
+        }
+
+        function showLoading(message) {
+            statusArea.innerHTML = `
+                <div style="text-align: center;">
+                    <div class="spinner"></div>
+                    <div class="loading-text">${message}</div>
+                </div>
+            `;
+            clearMessages();
+        }
+
+        function showError(message) {
+            errorMsg.textContent = message;
+            errorMsg.classList.add('show');
+            setTimeout(() => {
+                errorMsg.classList.remove('show');
+            }, 5000);
+        }
+
+        function showSuccess(message) {
+            successMsg.textContent = message;
+            successMsg.classList.add('show');
+            setTimeout(() => {
+                successMsg.classList.remove('show');
+            }, 5000);
+        }
+
+        function clearMessages() {
+            errorMsg.classList.remove('show');
+            successMsg.classList.remove('show');
+        }
+
+        // Check server health on load
+        window.addEventListener('load', async () => {
+            try {
+                const response = await fetch(`${API_BASE_URL}/health`);
+                if (response.ok) {
+                    const health = await response.json();
+                    console.log('Server health:', health);
+                }
+            } catch (error) {
+                console.warn('Server unavailable:', error);
+                showError('⚠️ Backend server not available. Make sure it\'s running on localhost:8000');
+            }
+        });
+    </script>
+</body>
+</html>

@@ -170,3 +170,15 @@ class MultiChannelLeafDataset(Dataset):
                 channel_tensors.append(value.transpose(2, 0, 1).astype(np.float32) / 255.0)
         stacked = np.concatenate(channel_tensors, axis=0)
         return torch.from_numpy(stacked)
+
+
+
+
+
+
+
+
+
+
+
+

@@ -134,10 +134,13 @@ def main():
     viz_dir = output_dir / "fusion_viz"
     viz_dir.mkdir(exist_ok=True)
     
+    # Path to manual labels (Anchors)
+    manual_labels_root = config.dataset_base / "Manual_labels"
+    
     # Process all images in train and val
     all_datasets = {
         "train": MultiChannelLeafDataset(manifest_df, config, split="train"),
-        "val": MultiChannelLeafDataset(manifest_df, config, split="val")
+        "validation": MultiChannelLeafDataset(manifest_df, config, split="validation")
     }
     
     total_processed = 0
@@ -192,13 +195,38 @@ def main():
                 segments = segments_batch[i]
                 
                 # Multi-class refinement
-                pseudo_mask = generator.refine_multi_class(
+                pseudo_mask_ssl = generator.refine_multi_class(
                     fg_map, 
                     (0.6 * anomaly_map + 0.4 * cam_map), # Simple fusion for evidence
                     segments,
                     cat_label=seg_label,
                     is_healthy_image=(cls_name == 'HLTY')
                 )
+                
+                # ANCHORING LOGIC: Check for manual ground truth mask
+                manual_mask_path = manual_labels_root / split / f"{stem}_mask.png"
+                if manual_mask_path.exists():
+                    # Load manual mask and use it as anchor
+                    manual_mask = cv2.imread(str(manual_mask_path), cv2.IMREAD_GRAYSCALE)
+                    manual_mask = cv2.resize(manual_mask, images.shape[2:][::-1], interpolation=cv2.INTER_NEAREST)
+                    # For diseased images in Roboflow, the mask is 1 (Disease). 
+                    # We map it to our seg_label.
+                    pseudo_mask = np.where(manual_mask > 0, seg_label, pseudo_mask_ssl)
+                    # Ensure background is still background if manual label is zero but SSL said category?
+                    # Actually, if we have GT, GT is the source of truth.
+                    # But Roboflow GT only masks the disease. The rest is leaf (1) or BG (0).
+                    # Our pseudo_mask_ssl already separates leaf from BG.
+                    # So we use manual_mask for category, and pseudo_mask_ssl for leaf/BG structure.
+                    
+                    # If manual_mask is 1 (disease), set it to seg_label.
+                    # If manual_mask is 0, we trust pseudo_mask_ssl (which could be 0:BG or 1:HLTY).
+                    is_disease = (manual_mask > 0)
+                    pseudo_mask = pseudo_mask_ssl.copy()
+                    pseudo_mask[is_disease] = seg_label
+                    anchored = True
+                else:
+                    pseudo_mask = pseudo_mask_ssl
+                    anchored = False
                 
                 # Save mask
                 mask_path = masks_dir / f"{stem}_mask.png"
@@ -211,7 +239,7 @@ def main():
                         fg_map,
                         (0.6 * anomaly_map + 0.4 * cam_map),
                         pseudo_mask,
-                        cls_name
+                        f"{cls_name} (Anchored)" if anchored else cls_name
                     )
                     plt.imsave(viz_dir / f"{stem}_fusion.png", viz)
                 

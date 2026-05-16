@@ -1,19 +1,13 @@
 {
-  "total_samples": 16403,
+  "total_samples": 2591,
   "healthy_samples": 1123,
-  "diseased_samples": 15280,
-  "samples_with_felz_raw": 13114,
-  "samples_with_felz_boundary": 13114,
-  "samples_with_felz_colored": 13114,
+  "diseased_samples": 1468,
+  "samples_with_felz_raw": 895,
+  "samples_with_felz_boundary": 895,
+  "samples_with_felz_colored": 895,
   "classes_seen": [
-    "BACT",
-    "DML",
     "HLTY",
-    "PML",
-    "SBL",
-    "SPW",
-    "VIRL",
-    "WLBL"
+    "Leaf-Diseases"
   ],
   "splits_seen": [
     "test",

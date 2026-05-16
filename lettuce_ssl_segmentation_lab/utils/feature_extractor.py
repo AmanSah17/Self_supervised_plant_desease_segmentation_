@@ -366,26 +366,26 @@ def extract_features_from_dataloader(
             pbar.update(1)
         
         except Exception as e:
-            print(f"\n✗ Error processing batch {batch_idx}: {str(e)}")
+            print(f"\n[ERROR] Error processing batch {batch_idx}: {str(e)}")
             raise
     
     # Concatenate all features
     all_features = np.concatenate(all_features, axis=0)
     
-    print(f"✓ Extracted {len(all_features)} feature vectors")
+    print(f"[OK] Extracted {len(all_features)} feature vectors")
     print(f"  Shape: {all_features.shape}")
     print(f"  Dtype: {all_features.dtype}")
     
     # Save features
     features_path = output_dir / f"features_{split}.npy"
     np.save(features_path, all_features)
-    print(f"✓ Features saved to {features_path}")
+    print(f"[OK] Features saved to {features_path}")
     
     # Save metadata
     metadata_path = output_dir / f"metadata_{split}.pkl"
     import pickle
     with open(metadata_path, 'wb') as f:
         pickle.dump(all_metadata, f)
-    print(f"✓ Metadata saved to {metadata_path}")
+    print(f"[OK] Metadata saved to {metadata_path}")
     
     return all_features, all_metadata

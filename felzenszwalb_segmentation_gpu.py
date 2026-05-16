@@ -27,7 +27,7 @@ import numba
 @dataclass
 class FelzenszwalbConfig:
     """Configuration for Felzenszwalb segmentation"""
-    dataset_base: str = "Lettuce_disease_datasets_split"
+    dataset_base: str = "Roboflow_Dataset"
     output_base: str = "felzenszwalb_masks_output"
     splits: Tuple[str, ...] = ("train", "validation", "test")
     

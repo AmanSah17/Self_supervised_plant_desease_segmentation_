@@ -48,11 +48,11 @@ def main():
     try:
         print_section("Initializing Learner")
         learner = HealthyRepresentationLearner(config, output_dir=None)
-        print(f"✓ Learner initialized")
+        print(f"[OK] Learner initialized")
         print(f"  Output dir: {learner.output_dir}")
     
     except Exception as e:
-        print(f"✗ Failed to initialize learner: {str(e)}")
+        print(f"[ERROR] Failed to initialize learner: {str(e)}")
         traceback.print_exc()
         return 1
     
@@ -69,7 +69,7 @@ def main():
         
         if result["status"] == "completed":
             print_section("Pipeline Execution Summary")
-            print(f"✓ Status: COMPLETED")
+            print(f"[OK] Status: COMPLETED")
             print(f"  Samples processed: {result['num_samples']}")
             print(f"  Feature dimension: {result['feature_dim']}")
             print(f"  Feature shape: {result['feature_shape']}")
@@ -85,9 +85,9 @@ def main():
             for fname in output_files:
                 fpath = learner.output_dir / fname
                 if fpath.exists():
-                    print(f"  ✓ {fname} ({fpath.stat().st_size / 1024 / 1024:.2f} MB)")
+                    print(f"  [OK] {fname} ({fpath.stat().st_size / 1024 / 1024:.2f} MB)")
                 else:
-                    print(f"  ⚠️  {fname} (not found)")
+                    print(f"  [WARN] {fname} (not found)")
             
             print_section("Next Steps")
             print("Stage 2 complete! Ready for Stage 3:")

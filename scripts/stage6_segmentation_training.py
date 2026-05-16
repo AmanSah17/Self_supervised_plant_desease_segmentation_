@@ -75,7 +75,7 @@ def main():
     train_transform, val_transform = get_transforms(config.img_size)
     
     train_dataset = MultiChannelLeafDataset(manifest_df, config, split="train", transform=train_transform)
-    val_dataset = MultiChannelLeafDataset(manifest_df, config, split="val", transform=val_transform)
+    val_dataset = MultiChannelLeafDataset(manifest_df, config, split="validation", transform=val_transform)
     
     if is_smoke_test:
         from torch.utils.data import Subset
@@ -104,8 +104,20 @@ def main():
     )
     
     # 3. Model Setup
-    # Mapping: 0: BG, 1: HLTY, 2-8: Diseases/Weeds -> Total 9 classes
-    num_classes = 9
+    # Mapping: 0: BG, 1: HLTY, 2+: Specific Diseases
+    # For Roboflow: 0: BG, 1: HLTY, 2: Leaf-Diseases
+    unique_classes = sorted(manifest_df['class_name'].unique())
+    # We always have BG (0), so num_classes = len(unique_classes) + 1 (if BG not in classes)
+    # Actually, the pipeline mapping in Stage 4/5 was:
+    # 0: BG, 1: HLTY, 2+: Others
+    # So num_classes is max(pseudo_mask) + 1. 
+    # Let's count based on the number of categories.
+    num_classes = len(unique_classes) + 1 if 'HLTY' in unique_classes else len(unique_classes) + 2 
+    # Simplified: for Roboflow (HLTY + Leaf-Diseases), it's 3.
+    # Let's just use 1 (BG) + 1 (HLTY) + count(Diseases)
+    other_classes = [c for c in unique_classes if c != 'HLTY']
+    num_classes = 1 + 1 + len(other_classes)
+    
     model_name = os.environ.get("SEG_MODEL", "segformer-b3")
     if is_smoke_test:
         model_name = "segformer-b0" # Use smallest for smoke test
